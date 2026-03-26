@@ -22,7 +22,45 @@ Pharma-LLM/
 └── data/
     └── pharma_preference_data.csv   # <-- place your CSV here
 ```
+## System architecture
 
+```mermaid
+flowchart TD
+    A["**TinyLlama-1.1B**\nHuggingFace base model"] --> C
+    B["**SFT Checkpoint**\nadapter_config.json\nadapter_model.safetensors"] --> D
+    P["**Preference Data**\npharma_preference_data.csv\nprompt / chosen / rejected"]
+
+    subgraph SFT ["  SFT Stage  "]
+        C["load_base_model\n8-bit quantised · device_map=auto"]
+        D["attach_sft_adapter\nPeftModel.from_pretrained"]
+        C --> E
+        D --> E
+        E["merge_and_unload\nadapter weights → base model"]
+    end
+
+    subgraph DPO ["  DPO Stage  "]
+        F["attach_lora_for_dpo\nLoRA r=8 · α=16 · q_proj, v_proj"]
+        G["**DPOTrainer**\nβ=0.1 · lr=2e-5 · sigmoid loss\nref_model=None — implicit frozen copy"]
+        F --> G
+    end
+
+    subgraph INF ["  Inference  "]
+        I["**inference.py** — side-by-side comparison\nSFT baseline  ↔  DPO-aligned response"]
+    end
+
+    E --> F
+    P --> G
+    G --> H["**dpo-aligned checkpoint**\noutputs/dpo-aligned/"]
+    H --> I
+
+    CFG["config.py\nhyperparams · paths · gen args"]
+    CFG -. configures .-> G
+
+    style SFT fill:none,stroke:#888,stroke-dasharray:5 5
+    style DPO fill:none,stroke:#888,stroke-dasharray:5 5
+    style INF fill:none,stroke:#888,stroke-dasharray:5 5
+    style CFG fill:none,stroke:#aaa,stroke-dasharray:3 3
+```
 ---
 
 ## Setup
